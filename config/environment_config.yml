@@ -1,0 +1,19 @@
+obstacles:
+  min_obstacles: 1
+  max_obstacles: 3
+  obstacle_probabilities: [1.0, 0.0, 0.0]
+  max_center: 0.3
+  min_center: 0.2
+  max_side_length: 0.05
+  min_side_length: 0.01
+  side_y: 0.01
+w:
+  input_size: 20
+  hidden_size: 40
+  output_size: 10
+path:
+  segment_step_size: 0.001
+  goal_distance: 0.04
+reward:
+  keep_alive_penalty: 0.01
+  truncate_penalty: 0.05
