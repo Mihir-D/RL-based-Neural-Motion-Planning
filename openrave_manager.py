@@ -4,6 +4,7 @@ import yaml
 import numpy as np
 import torch
 import random
+import torch.optim as optim
 from obstacle_generator import ObstacleGenerator
 from workspace_feature_vector import WorkspaceFeature
 
@@ -20,11 +21,13 @@ class OpenRaveManager(object):
         self.env.Load(env_path)
         self.robot = self.env.GetRobots()[0]
         self.obstacles = [] # objects of type KinBody 
-        self.obstacles_data =[] # objects of type #Obstacle defined in obstacle_generator.py
+        self.obstacles_data = [] # objects of type #Obstacle defined in obstacle_generator.py
 
         self.workspace_features_network = WorkspaceFeature(self.config['w']['input_size'], self.config['w']['hidden_size'],
                     self.config['w']['output_size']).to(self.device) # to shrink workspace features into a vector of constant size
-
+        
+        self.workspace_features_optimizer = optim.Adam(self.workspace_features_network.parameters(), lr = self.config['w']['learning_rate'])
+        
 
     def reset(self):
         self.delete_obstacles()

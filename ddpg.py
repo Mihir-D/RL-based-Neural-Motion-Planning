@@ -1,6 +1,6 @@
 import torch
 import os
-import torch.autograd
+from torch.autograd import Variable
 import torch.optim as optim
 import torch.nn as nn
 from replay_buffer import ReplayBuffer
@@ -13,6 +13,7 @@ class DDPGAgent:
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
         self.environment_config = environment_config
         self.config = config
+        self.env = env
         self.dim_states = env.robot.GetDOF() + self.environment_config['w']['output_size']
         self.dim_actions = env.robot.GetDOF() - 1
         self.gamma = self.config['model']['gamma']
@@ -34,8 +35,7 @@ class DDPGAgent:
 
         for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
             target_param.data.copy_(param.data)
-        
-  
+          
         self.replay_buffer = ReplayBuffer(config['model']['replay_buffer_size'])        
         self.critic_criterion  = nn.MSELoss()
         self.actor_optimizer  = optim.Adam(self.actor.parameters(), lr = self.config['model']['actor']['learning_rate'])
@@ -48,22 +48,29 @@ class DDPGAgent:
         combined_state = torch.cat([state, workspace_features], 0)
         action = self.actor.forward(combined_state)
         action = action.detach().cpu().clone().numpy()
+        action = action * self.environment_config['path']['action_step_size']
         return action
+
+    def process_states_to_train(self, states):
+        processed_states = [state.detach().cpu().clone().numpy() for state in states]
+        return Variable(torch.cuda.FloatTensor(processed_states), requires_grad = True)
     
     def update(self):
         states, actions, rewards, next_states, terminals = self.replay_buffer.sample(self.batch_size)
-        states = torch.cuda.FloatTensor(states)
+        # states = Variable(torch.cuda.FloatTensor(states), requires_grad = True)
+        states_train = self.process_states_to_train(states)
         actions = torch.cuda.FloatTensor(actions)
-        rewards = torch.cuda.FloatTensor(rewards)
-        next_states = torch.cuda.FloatTensor(next_states)
+        rewards = torch.cuda.FloatTensor(rewards).view(-1, 1)
+        next_states_train = self.process_states_to_train(next_states)
+        # next_states = Variable(torch.cuda.FloatTensor(next_states), requires_grad = True)
      
-        Q_vals = self.critic.forward(states, actions)
-        next_actions = self.actor_target.forward(next_states)
-        Q_next = self.critic_target.forward(next_states, next_actions.detach())
+        Q_vals = self.critic.forward(states_train, actions)
+        next_actions = self.actor_target.forward(next_states_train)
+        Q_next = self.critic_target.forward(next_states_train, next_actions.detach())
         Q_target = rewards + self.gamma * Q_next
         critic_loss = self.critic_criterion(Q_vals, Q_target)
 
-        policy_loss = -self.critic.forward(states, self.actor.forward(states)).mean()
+        policy_loss = -self.critic.forward(states_train, self.actor.forward(states_train)).mean()
         
         self.critic_optimizer.zero_grad()
         critic_loss.backward() 
@@ -72,7 +79,14 @@ class DDPGAgent:
         self.actor_optimizer.zero_grad()
         policy_loss.backward()
         self.actor_optimizer.step()
-         
+        
+        self.env.workspace_features_optimizer.zero_grad()
+        for i, state in enumerate(states):
+            loss_criterion = nn.MSELoss()
+            loss = loss_criterion(state, states_train[i] + states_train.grad[i])
+            loss.backward(retain_graph = True)
+        self.env.workspace_features_optimizer.step()
+
         for target_param, param in zip(self.actor_target.parameters(), self.actor.parameters()):
             target_param.data.copy_(param.data * self.tau + target_param.data * (1.0 - self.tau))
        

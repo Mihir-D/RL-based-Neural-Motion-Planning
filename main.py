@@ -35,7 +35,7 @@ class DDPG(object):
     def get_combined_state(self, state, workspace_features):   
         state = torch.from_numpy(state).float().squeeze(0).to(self.device)
         combined_state = torch.cat([state, workspace_features], 0)
-        return combined_state.detach().cpu().clone().numpy()
+        return combined_state
     
     def run_episode(self, episode):
         state, workspace_features = self.env.reset()
