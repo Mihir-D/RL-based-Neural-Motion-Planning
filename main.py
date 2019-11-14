@@ -9,6 +9,7 @@ from noise import OUNoise
 from openrave_manager import OpenRaveManager
 import torch
 import argparse
+import time
 
 def parse():
     parser = argparse.ArgumentParser(description = 'ddpg')
@@ -33,8 +34,7 @@ class DDPG(object):
         self.avg_rewards = []
 
     def get_combined_state(self, state, workspace_features):   
-        state = torch.from_numpy(state).float().squeeze(0).to(self.device)
-        combined_state = torch.cat([state, workspace_features], 0)
+        combined_state = np.hstack([state, workspace_features])
         return combined_state
     
     def run_episode(self, episode):
@@ -46,6 +46,7 @@ class DDPG(object):
             action = self.agent.get_action(state, workspace_features)
             action = self.noise.get_action(action, step)
             next_state, reward, done = self.env.step(action) 
+
             combined_state = self.get_combined_state(state, workspace_features)
             combined_next_state = self.get_combined_state(next_state, workspace_features)
             self.agent.add_to_replay_buffer(combined_state, action, combined_next_state, reward, done)
@@ -59,23 +60,30 @@ class DDPG(object):
             if done:
                 sys.stdout.write("episode: {}, reward: {}, average _reward: {} \n".format(episode, np.round(episode_reward, decimals=2), 
                         np.mean(self.rewards[-10:])))
-                break
-
+                self.rewards.append(episode_reward)
+                self.avg_rewards.append(np.mean(self.rewards[-10:]))
+                return
+        sys.stdout.write("episode: {}, reward: {}, average _reward: {} \n".format(episode, np.round(episode_reward, decimals=2), 
+                        np.mean(self.rewards[-10:])))
         self.rewards.append(episode_reward)
         self.avg_rewards.append(np.mean(self.rewards[-10:]))
     
     def run_test_episode(self):
         state, workspace_features = self.env.reset()
         episode_reward = 0
+
         for step in range(self.steps_per_episode):
             action = self.agent.get_action(state, workspace_features)
-            next_state, reward, done = self.env.step(action)
-
+            next_state, reward, done = self.env.step(action)     
             state = next_state
             episode_reward += reward
+            
             if done:
+                if reward > 0:
+                    self.successful_test_episodes += 1
                 sys.stdout.write("episode reward: {} \n".format(episode_reward))
-                break
+                return
+        sys.stdout.write("episode reward: {} \n".format(episode_reward))
 
     def train(self):
         for episode in range(self.num_episodes):
@@ -83,9 +91,12 @@ class DDPG(object):
         self.agent.save_model()
 
     def test(self):
+        self.successful_test_episodes = 0
         self.agent.load_model()
         for episode in range(self.config['test']['num_episodes']):
             self.run_test_episode()
+            time.sleep(2)
+        print(self.successful_test_episodes)
     
     def plot(self):
         plt.plot(self.rewards)

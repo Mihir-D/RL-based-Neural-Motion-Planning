@@ -14,9 +14,9 @@ class Actor(nn.Module):
         self.output_layer = nn.Linear(hidden_sizes[len(hidden_sizes) - 1], output_size)
 
     def forward(self, state):
-        x = F.relu(self.input_layer(state))
+        x = F.elu(self.input_layer(state))
         for layer in self.hidden_layers:
-            x = F.relu(layer(x))
+            x = F.elu(layer(x))
         x = torch.tanh(self.output_layer(x))
 
         return x

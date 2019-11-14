@@ -1,19 +1,21 @@
 model:
   save_dir: 'model'
-  batch_size: 64
+  batch_size: 128
   gamma: 0.99
-  tau: 0.01
-  replay_buffer_size: 50000
-  num_episodes: 1000
+  tau: 0.05
+  replay_buffer_size: 1000000
+  num_episodes: 10000
   steps_per_episode: 500
 
   actor:
-    hidden_layers: [256]
-    learning_rate: 0.0001
+    hidden_layers: [200, 200, 200, 200]
+    learning_rate: 0.001
+    save_file: 'actor_openrave_1.pth'
   
   critic: 
-    hidden_layers: [256]
+    hidden_layers: [400, 400, 400, 400]
     learning_rate: 0.001
+    save_file: 'critic_openrave_1.pth'
 
 test:
   num_episodes: 30

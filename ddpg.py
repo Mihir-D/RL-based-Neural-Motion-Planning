@@ -14,7 +14,7 @@ class DDPGAgent:
         self.environment_config = environment_config
         self.config = config
         self.env = env
-        self.dim_states = env.robot.GetDOF() + self.environment_config['w']['output_size']
+        self.dim_states = env.robot.GetDOF() * 2 + 5 * self.environment_config['obstacles']['max_obstacles']
         self.dim_actions = env.robot.GetDOF() - 1
         self.gamma = self.config['model']['gamma']
         self.tau = self.config['model']['tau']
@@ -45,48 +45,35 @@ class DDPGAgent:
     
     def get_action(self, state, workspace_features):
         state = torch.from_numpy(state).float().squeeze(0).to(self.device)
+        workspace_features = torch.from_numpy(workspace_features).float().squeeze(0).to(self.device)
         combined_state = torch.cat([state, workspace_features], 0)
         action = self.actor.forward(combined_state)
         action = action.detach().cpu().clone().numpy()
         action = action * self.environment_config['path']['action_step_size']
         return action
-
-    def process_states_to_train(self, states):
-        processed_states = [state.detach().cpu().clone().numpy() for state in states]
-        return Variable(torch.cuda.FloatTensor(processed_states), requires_grad = True)
     
     def update(self):
         states, actions, rewards, next_states, terminals = self.replay_buffer.sample(self.batch_size)
-        # states = Variable(torch.cuda.FloatTensor(states), requires_grad = True)
-        states_train = self.process_states_to_train(states)
+        states = torch.cuda.FloatTensor(states)
         actions = torch.cuda.FloatTensor(actions)
         rewards = torch.cuda.FloatTensor(rewards).view(-1, 1)
-        next_states_train = self.process_states_to_train(next_states)
-        # next_states = Variable(torch.cuda.FloatTensor(next_states), requires_grad = True)
+        next_states = torch.cuda.FloatTensor(next_states)
+        
      
-        Q_vals = self.critic.forward(states_train, actions)
-        next_actions = self.actor_target.forward(next_states_train)
-        Q_next = self.critic_target.forward(next_states_train, next_actions.detach())
+        Q_vals = self.critic.forward(states, actions)
+        next_actions = self.actor_target.forward(next_states)
+        Q_next = self.critic_target.forward(next_states, next_actions.detach())
         Q_target = rewards + self.gamma * Q_next
         critic_loss = self.critic_criterion(Q_vals, Q_target)
 
-        policy_loss = -self.critic.forward(states_train, self.actor.forward(states_train)).mean()
-        
+        policy_loss = -self.critic.forward(states, self.actor.forward(states)).mean()
         self.critic_optimizer.zero_grad()
         critic_loss.backward() 
-        self.critic_optimizer.step()        
-
+        self.critic_optimizer.step()  
         self.actor_optimizer.zero_grad()
         policy_loss.backward()
         self.actor_optimizer.step()
         
-        self.env.workspace_features_optimizer.zero_grad()
-        for i, state in enumerate(states):
-            loss_criterion = nn.MSELoss()
-            loss = loss_criterion(state, states_train[i] + states_train.grad[i])
-            loss.backward(retain_graph = True)
-        self.env.workspace_features_optimizer.step()
-
         for target_param, param in zip(self.actor_target.parameters(), self.actor.parameters()):
             target_param.data.copy_(param.data * self.tau + target_param.data * (1.0 - self.tau))
        
@@ -97,15 +84,15 @@ class DDPGAgent:
         self.replay_buffer.push(state, action, reward, next_state, done)
 
     def save_model(self):
-        actor_save_path = os.path.join(os.getcwd(), self.save_dir, 'actor_openrave.pth')
+        actor_save_path = os.path.join(os.getcwd(), self.save_dir, self.config['model']['actor']['save_file'])
         torch.save(self.actor.state_dict(), actor_save_path)
-        critic_save_path = os.path.join(os.getcwd(), self.save_dir, 'critic_openrave.pth')
+        critic_save_path = os.path.join(os.getcwd(), self.save_dir, self.config['model']['critic']['save_file'])
         torch.save(self.critic.state_dict(), critic_save_path)
     
     def load_model(self):
-        actor_save_path = os.path.join(os.getcwd(), self.save_dir, 'actor_openrave.pth')
+        actor_save_path = os.path.join(os.getcwd(), self.save_dir, self.config['model']['actor']['save_file'])
         self.actor.load_state_dict(torch.load(actor_save_path))
-        critic_save_path = os.path.join(os.getcwd(), self.save_dir, 'critic_openrave.pth')
+        critic_save_path = os.path.join(os.getcwd(), self.save_dir, self.config['model']['critic']['save_file'])
         self.critic.load_state_dict(torch.load(critic_save_path))
 
         self.actor.eval()

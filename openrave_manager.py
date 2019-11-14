@@ -22,12 +22,7 @@ class OpenRaveManager(object):
         self.robot = self.env.GetRobots()[0]
         self.obstacles = [] # objects of type KinBody 
         self.obstacles_data = [] # objects of type #Obstacle defined in obstacle_generator.py
-
-        self.workspace_features_network = WorkspaceFeature(self.config['w']['input_size'], self.config['w']['hidden_size'],
-                    self.config['w']['output_size']).to(self.device) # to shrink workspace features into a vector of constant size
-        
-        self.workspace_features_optimizer = optim.Adam(self.workspace_features_network.parameters(), lr = self.config['w']['learning_rate'])
-        
+        self.max_attempts_to_initial_configuration = self.config['obstacles']['max_attempts_to_initial_configuration']
 
     def reset(self):
         self.delete_obstacles()
@@ -35,6 +30,7 @@ class OpenRaveManager(object):
         self.initialize_robot_position()
         self.robot_start_configuration = self.robot.GetDOFValues()
         self.workspace_features = self.get_workspace_features()
+        
         return self.robot_start_configuration, self.workspace_features
     
     def partition_segment(self, start_configuration, action):
@@ -93,7 +89,7 @@ class OpenRaveManager(object):
         reward -= distance * self.config['reward']['truncate_penalty']
 
         if self.check_segment_validity(current_robot_configuration, action):
-            if self.is_near_goal:
+            if self.is_near_goal(current_robot_configuration):
                 reward += 1.0
                 return self.robot.GetDOFValues(), reward, True
             reward -= self.config['reward']['keep_alive_penalty']
@@ -147,21 +143,31 @@ class OpenRaveManager(object):
         self.robot.SetActiveDOFs(range(1, 5))
         valid_configuration = False
         joint_bounds = self.get_joint_bounds()
+        attempts = 0
         while not valid_configuration:
+            attempts += 1
             joint_values = []
             for i in range(1, self.robot.GetDOF()):
                 joint_values.append(np.random.uniform(joint_bounds[0][i], joint_bounds[1][i]))
             valid_configuration = self.is_valid_configuration(joint_values)
+
+            if attempts == self.max_attempts_to_initial_configuration:
+                self.delete_obstacles()
+                self.add_obstacles()
+                attempts = 0
+            
 
     def get_workspace_features(self):
         self.initialize_robot_position() # Get random goal configuration
         self.robot_goal_configuration = self.robot.GetDOFValues()
         self.robot.SetDOFValues(self.robot_start_configuration) # reset robot back to initial configuration
 
-        obstacles_data = np.hstack((obstacle_data.side_x, obstacle_data.side_z, obstacle_data.center_x, obstacle_data.center_z, 
+        if len(self.obstacles_data) > 0:
+            obstacles_data = np.hstack((obstacle_data.side_x, obstacle_data.side_z, obstacle_data.center_x, obstacle_data.center_z, 
                 obstacle_data.theta_y) for obstacle_data in self.obstacles_data)
+        else:
+            obstacles_data = np.array([])
         workspace_features = np.hstack([self.robot_goal_configuration, obstacles_data])
-        workspace_features = np.pad(workspace_features, (0, self.config['w']['input_size'] - workspace_features.shape[0]), 'constant', constant_values = (0,))
-        workspace_features = torch.cuda.FloatTensor(workspace_features)
-
-        return self.workspace_features_network.forward(workspace_features)
+        workspace_features = np.pad(workspace_features, (0, self.robot.GetDOF() + 5 * self.config['obstacles']['max_obstacles'] - workspace_features.shape[0]), 'constant', constant_values = (0,))
+        
+        return workspace_features
