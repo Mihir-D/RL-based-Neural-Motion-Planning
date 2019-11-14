@@ -52,7 +52,7 @@ class DDPG(object):
             self.agent.add_to_replay_buffer(combined_state, action, combined_next_state, reward, done)
 
             if len(self.agent.replay_buffer) > self.batch_size:
-                self.agent.update()        
+                self.agent.update()
 
             state = next_state
             episode_reward += reward
@@ -67,7 +67,65 @@ class DDPG(object):
                         np.mean(self.rewards[-10:])))
         self.rewards.append(episode_reward)
         self.avg_rewards.append(np.mean(self.rewards[-10:]))
-    
+
+    def run_HER_episode(self, episode):
+        state, workspace_features = self.env.reset()
+        self.noise.reset()
+        episode_reward = 0
+        episode_success = False
+        goal_index_i = len(state)
+        count_for_goal_update = self.steps_per_episode
+        state = None
+
+        for step in range(self.steps_per_episode):
+            action = self.agent.get_action(state, workspace_features)
+            action = self.noise.get_action(action, step)
+            next_state, reward, done = self.env.step(action)
+
+            combined_state = self.get_combined_state(state, workspace_features)
+            combined_next_state = self.get_combined_state(next_state, workspace_features)
+            self.agent.add_to_replay_buffer(combined_state, action, combined_next_state, reward, done)
+
+            state = next_state
+            episode_reward += reward
+
+            if done:
+                count_for_goal_update = step
+                episode_success = True
+                sys.stdout.write("episode: {}, reward: {}, average _reward: {} \n".format(episode, np.round(episode_reward, decimals=2),
+                        np.mean(self.rewards[-10:])))
+                self.rewards.append(episode_reward)
+                self.avg_rewards.append(np.mean(self.rewards[-10:]))
+                return
+
+        if not episode_success:
+            new_goal = state
+            current_buffer_count = len(self.agent.replay_buffer)
+            for i in range(self.steps_per_episode):
+                (combined_state,action,combined_next_state,reward, done) = \
+                    self.agent.replay_buffer.buffer \
+                        [current_buffer_count - self.steps_per_episode + i]
+                for j in range(len(new_goal)):
+                    combined_state[goal_index_i+j] = new_goal[j]
+                    combined_next_state[goal_index_i+j] = new_goal[j]
+
+                if i = self.steps_per_episode - 1:
+                    reward = self.env.get_goal_reward()
+                    done = True
+
+                self.agent.add_to_replay_buffer(combined_state, action, 
+                    combined_next_state, reward, done)
+
+        # Train the agent
+        for i in range(self.steps_per_episode):
+            if len(self.agent.replay_buffer) > self.batch_size:
+                self.agent.update()
+
+        sys.stdout.write("episode: {}, reward: {}, average _reward: {} \n".format(episode, np.round(episode_reward, decimals=2), 
+                        np.mean(self.rewards[-10:])))
+        self.rewards.append(episode_reward)
+        self.avg_rewards.append(np.mean(self.rewards[-10:]))
+
     def run_test_episode(self):
         state, workspace_features = self.env.reset()
         episode_reward = 0
@@ -87,7 +145,8 @@ class DDPG(object):
 
     def train(self):
         for episode in range(self.num_episodes):
-            self.run_episode(episode)
+            # self.run_episode(episode)
+            self.run_HER_episode(episode)
         self.agent.save_model()
 
     def test(self):

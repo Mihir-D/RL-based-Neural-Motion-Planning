@@ -99,6 +99,8 @@ class OpenRaveManager(object):
             reward -= 1.0
             return current_robot_configuration, reward, True
 
+    def get_goal_reward(self):
+        return 1
     
     def delete_obstacles(self):
         for obstacle in self.obstacles:
