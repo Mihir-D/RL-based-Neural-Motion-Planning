@@ -75,8 +75,8 @@ class DDPG(object):
         episode_success = False
         goal_index_i = len(state)
         count_for_goal_update = self.steps_per_episode
-        state = None
-
+        # state = None
+        print(self.env.robot_goal_configuration)
         for step in range(self.steps_per_episode):
             action = self.agent.get_action(state, workspace_features)
             action = self.noise.get_action(action, step)
@@ -88,28 +88,26 @@ class DDPG(object):
 
             state = next_state
             episode_reward += reward
-
             if done:
                 count_for_goal_update = step
-                episode_success = True
+                if reward > 0.9:            
+                    episode_success = True
                 sys.stdout.write("episode: {}, reward: {}, average _reward: {} \n".format(episode, np.round(episode_reward, decimals=2),
                         np.mean(self.rewards[-10:])))
                 self.rewards.append(episode_reward)
                 self.avg_rewards.append(np.mean(self.rewards[-10:]))
-                return
-
+                break
         if not episode_success:
             new_goal = state
             current_buffer_count = len(self.agent.replay_buffer)
-            for i in range(self.steps_per_episode):
-                (combined_state,action,combined_next_state,reward, done) = \
+            for i in range(step):
+                (combined_state,action, reward, combined_next_state, done) = \
                     self.agent.replay_buffer.buffer \
-                        [current_buffer_count - self.steps_per_episode + i]
-                for j in range(len(new_goal)):
-                    combined_state[goal_index_i+j] = new_goal[j]
-                    combined_next_state[goal_index_i+j] = new_goal[j]
+                        [current_buffer_count - step + i]
+                combined_next_state[:5] = new_goal
+                combined_state[:5] = new_goal
 
-                if i = self.steps_per_episode - 1:
+                if i == self.steps_per_episode - 1:
                     reward = self.env.get_goal_reward()
                     done = True
 
@@ -121,12 +119,13 @@ class DDPG(object):
             if len(self.agent.replay_buffer) > self.batch_size:
                 self.agent.update()
 
-        sys.stdout.write("episode: {}, reward: {}, average _reward: {} \n".format(episode, np.round(episode_reward, decimals=2), 
-                        np.mean(self.rewards[-10:])))
-        self.rewards.append(episode_reward)
-        self.avg_rewards.append(np.mean(self.rewards[-10:]))
+        # sys.stdout.write("episode: {}, reward: {}, average _reward: {} \n".format(episode, np.round(episode_reward, decimals=2), 
+        #                 np.mean(self.rewards[-10:])))
+        # self.rewards.append(episode_reward)
+        # self.avg_rewards.append(np.mean(self.rewards[-10:]))
 
     def run_test_episode(self):
+        self.env.robot_goal_configuration = [0., -0.53508878, 1.06029753, 0.46753344, 2.22288394]
         state, workspace_features = self.env.reset()
         episode_reward = 0
 

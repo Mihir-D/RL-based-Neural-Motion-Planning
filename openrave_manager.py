@@ -23,6 +23,8 @@ class OpenRaveManager(object):
         self.obstacles = [] # objects of type KinBody 
         self.obstacles_data = [] # objects of type #Obstacle defined in obstacle_generator.py
         self.max_attempts_to_initial_configuration = self.config['obstacles']['max_attempts_to_initial_configuration']
+        self.initialize_robot_position() # Get random goal configuration
+        self.robot_goal_configuration = self.robot.GetDOFValues()
 
     def reset(self):
         self.delete_obstacles()
@@ -160,8 +162,8 @@ class OpenRaveManager(object):
             
 
     def get_workspace_features(self):
-        self.initialize_robot_position() # Get random goal configuration
-        self.robot_goal_configuration = self.robot.GetDOFValues()
+        # self.initialize_robot_position() # Get random goal configuration
+        # self.robot_goal_configuration = self.robot.GetDOFValues()
         self.robot.SetDOFValues(self.robot_start_configuration) # reset robot back to initial configuration
 
         if len(self.obstacles_data) > 0:
